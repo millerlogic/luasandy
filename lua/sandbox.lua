@@ -132,6 +132,71 @@ function runSandboxFull(code, env, beforeRunFunc)
 	return true, env
 end
 
+function createSandboxEnvIO(envio)
+	envio = envio or {}
+	local doutfile, dinfile -- Default output & input.
+	envio.close = function(f)
+		if not f then
+			f = doutfile
+		end
+		return f:close()
+	end
+	envio.flush = function()
+		return doutfile:flush()
+	end
+	envio.input = function(f)
+		if type(f) == "string" then
+			dinfile = assert(envio.open(f))
+		elseif f then
+			dinfile = f
+		else
+			return dinfile
+		end
+	end
+	envio.lines = function(fn)
+		if fn then
+			-- Auto-close file at EOF.
+			local f = assert(envio.open(fn))
+			local linesfunc = f:lines()
+			return function()
+				local line = linesfunc()
+				if not line then
+					f:close()
+				end
+				return line
+			end
+		else
+			-- Don't auto-close dinfile.
+			return dinfile:lines()
+		end
+	end
+	-- envio.open = ...
+	envio.output = function(f)
+		if type(f) == "string" then
+			doutfile = assert(envio.open(f, "w"))
+		elseif f then
+			doutfile = f
+		else
+			return doutfile
+		end
+	end
+	--[[ envio.popen = function()
+		return nil, "popen not supported"
+	end --]]
+	envio.read = function(...)
+		return dinfile:read(...)
+	end
+	--[[ envio.tmpfile = function()
+		-- TODO: delete on exit.
+		return envio.open("/tmp/tmp" .. env.math.random()
+	end --]]
+	-- envio.type = ...
+	envio.write = function(...)
+		return doutfile:write(...)
+	end
+	return envio
+end
+
 function createSandboxEnv(env)
 	env = env or {}
 	env._G = env
@@ -225,6 +290,7 @@ function createSandboxEnv(env)
 		code = math.floor(code or 0)
 		error("exit " .. code .. "{E6A0C4BD-75DC-4313-A1AF-7666ED28545B}", 0)
 	end
+	env.io = createSandboxEnvIO(env.io or {})
 	env.loadstring = env.loadstring or function(src, name)
 		local f, err = checkfatal(loadstring(" \t " .. src .. " \t ", name or "user.loadstring"))
 		if not f then
